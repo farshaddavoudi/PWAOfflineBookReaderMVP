@@ -1,0 +1,55 @@
+﻿@page "/viewer/{Id:guid}"
+@using TestOfflineBookReader.Client.IndexedDB
+@using TestOfflineBookReader.Shared
+@inject BookDataIndexedDb BookDataIndexedDb
+@inject IJSRuntime JSRuntime
+
+<OnlineStatusIndicator />
+
+@if (BookData is null)
+{
+    <div> Loading ... </div>
+}
+
+@if (BookData is not null)
+{
+
+    <NoJS.PDFViewer.PDFViewer Document="@BookData"
+                              DocumentHeight="500px"
+                              DocumentName="@DocumentName()"
+                              DocumentWidth="100%"
+                              SaveBtnImage="download.png" />
+} 
+
+@code{
+    private byte[] BookData { get; set; }
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        BookData = await GetPdfBytesFromIndexedDbAsync(Id);
+    }
+
+    //fetch your pdf from your machine or from your service
+    //public static string pdfFilePath = @"C:\Users\lenovo\Desktop\22.pdf";
+
+    private async Task<byte[]> GetPdfBytesFromIndexedDbAsync(Guid guid)
+    {
+        ///Get from IndexedDb
+        var openDbResult = await BookDataIndexedDb.OpenIndexedDb();
+
+        var bookFile = await BookDataIndexedDb.GetByKey<Guid, BookFile>(nameof(BookFile), guid);
+
+        Console.WriteLine(bookFile.Data);
+
+        return bookFile.Data;
+    }
+
+    public string DocumentName()
+    {
+        //use your way to fetch your file name or generate one
+        return "ExamplePdf";
+    }
+}

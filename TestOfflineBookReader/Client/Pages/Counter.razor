@@ -1,0 +1,95 @@
+﻿@page "/counter"
+@using TestOfflineBookReader.Shared
+@using TestOfflineBookReader.Client.IndexedDB
+@using System.IO
+@inject BookDataIndexedDb BookDataIndexedDb
+@inject IJSRuntime JSRuntime
+
+<h1>Uploader</h1>
+
+<EditForm class="row" Model="Book" OnValidSubmit="HandleBookSubmit">
+    <InputText class="form-control" id="bookTitle" @bind-Value="Book.Name" placeholder="عنوان کتاب" />
+
+    <br />
+
+    <InputFile OnChange="@LoadFiles" multiple />
+    
+    <br/>
+
+    <button type="submit" class="btn btn-primary w-100">Upload</button>
+
+    <br/>
+
+    <span style="font-weight: bold"> @UploadStatus </span>
+</EditForm>
+
+
+
+@code {
+    private Book Book { get; set; } = new();
+    private BookFile BookFile { get; set; } = new();
+
+    private string UploadStatus { get; set; }
+
+    private async Task HandleBookSubmit()
+    {
+        var isOnline = await JSRuntime.InvokeAsync<bool>("isAppOnline");
+
+        if (isOnline is false)
+        {
+            UploadStatus = "You are offline and cannot upload any image in this mode";
+            return;
+        }
+
+        if (Book.Name is null)
+        {
+            UploadStatus = "Fill the book name";
+            return;
+        }
+
+        if (Book.Id == default || BookFile.Data is null || BookFile.Data.Length == 0)
+        {
+            UploadStatus = "Upload a PDF";
+            return;
+        }
+
+        UploadStatus = "Uploading...";
+
+        // Save into Book
+        await BookDataIndexedDb.OpenIndexedDb();
+
+        await BookDataIndexedDb.AddItems<Book>(nameof(Book), new List<Book>
+        {
+            new(){ Id = Book.Id, BookId = Book.Id, Name = Book.Name, Size = Book.Size}
+        });
+
+        //PdfBookSample bookSample = new();
+        //var base64Data = bookSample.GetBase64String1MB();
+
+        // Save Book File
+        await BookDataIndexedDb.AddItems<BookFile>(nameof(BookFile), new List<BookFile>
+        {
+            new BookFile {Id = Book.Id, BookId = Book.Id, Data = BookFile.Data}
+        });
+
+        UploadStatus = "Uploaded";
+
+        StateHasChanged();
+    }
+
+    private async Task LoadFiles(InputFileChangeEventArgs e)
+    {
+        Book.Id = Guid.NewGuid();
+
+        var buffers = new byte[e.File.Size];
+
+        Book.Size = (int)e.File.Size;
+
+        await using var fileStream = e.File.OpenReadStream(Int64.MaxValue);
+        await fileStream.ReadAsync(buffers);
+        await fileStream.DisposeAsync();
+
+        BookFile.Data = buffers;
+    }
+
+}

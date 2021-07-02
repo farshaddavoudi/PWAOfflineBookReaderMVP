@@ -1,0 +1,102 @@
+﻿@page "/fetchdata"
+@using TestOfflineBookReader.Shared
+@using TestOfflineBookReader.Client.IndexedDB
+@using System.Text.Json
+@inject HttpClient Http
+@inject ForecastDataIndexedDb ForcastsDataIndexedDb
+@inject IJSRuntime JSRuntime
+
+<h1>Weather forecast</h1>
+
+<p>This component demonstrates fetching data from the server.</p>
+
+@if (forecasts == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Temp. (C)</th>
+                <th>Temp. (F)</th>
+                <th>Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var forecast in forecasts)
+            {
+                <tr>
+                    <td>@forecast.Date.ToShortDateString()</td>
+                    <td>@forecast.TemperatureC</td>
+                    <td>@forecast.TemperatureF</td>
+                    <td>@forecast.Summary</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private WeatherForecast[] forecasts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var isOnline = await JSRuntime.InvokeAsync<bool>("isAppOnline");
+
+        Console.WriteLine($"is Online : {isOnline}");
+
+        // Initialize IndexedDB
+        var openDbResult = await ForcastsDataIndexedDb.OpenIndexedDb();
+
+        if (isOnline)
+        {
+            var forecastsServer = await GetFromServer();
+
+            //var addDbResult = await ForcastsDataIndexedDb.AddItems<WeatherForecast>(nameof(WeatherForecast), forecastsServer!.ToList());
+            var allLocalIndexedDbRecords = await ForcastsDataIndexedDb.GetAll<WeatherForecast>(nameof(WeatherForecast));
+
+            Console.WriteLine("All already IndexedDb data:");
+            Console.WriteLine(JsonSerializer.Serialize(allLocalIndexedDbRecords));
+
+            // Delete ones there in IndexedDb but not in forecastsServer
+            var extrasInInedexedDb = allLocalIndexedDbRecords.Except(forecastsServer!).ToList();
+
+            foreach (var forecast in extrasInInedexedDb)
+            {
+                // Delete them
+                await ForcastsDataIndexedDb.DeleteByKey<int>(nameof(WeatherForecast), (int)forecast.Id!);
+            }
+
+            foreach (var forecast in forecastsServer)
+            {
+                var sameRecordInIndexedDb = await ForcastsDataIndexedDb.GetByKey<int, WeatherForecast>(nameof(WeatherForecast), (int)forecast.Id!);
+
+                if (sameRecordInIndexedDb is null)
+                { // Add to store
+                    await ForcastsDataIndexedDb.AddItems<WeatherForecast>(nameof(WeatherForecast), new List<WeatherForecast> { forecast });
+                }
+                else
+                {
+                    // Check needing to update
+                    if (sameRecordInIndexedDb.Summary != forecast.Summary)
+                    {
+                        await ForcastsDataIndexedDb.UpdateItems<WeatherForecast>(nameof(WeatherForecast), new List<WeatherForecast> { forecast });
+                    }
+                }
+            }
+        }
+
+
+        // Get from IndexedDb finally
+        forecasts = (await ForcastsDataIndexedDb.GetAll<WeatherForecast>(nameof(WeatherForecast))).ToArray();
+    }
+
+    private async Task<WeatherForecast[]> GetFromServer()
+    {
+        return await Http.GetFromJsonAsync<WeatherForecast[]>("WeatherForecast");
+    }
+
+}
